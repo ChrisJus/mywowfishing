@@ -4,311 +4,307 @@
 # Create_Date :2020-02-26 19:31
 # Description :wow fishing script
 # IDE         :PyCharm
-import math
+import random
+import threading
 import time
-
-import autopy as at
-from pykeyboard import PyKeyboard
-import pyscreenshot as ImageGrab
-import cv2
-import numpy as np
+import tkinter as tk
 from collections import deque
-import pyaudio
-import audioop
-import sounddevice as sd
 
-# x = 0
+import numpy as np
+import Quartz
+from AppKit import NSWorkspace
+from catap import (
+    AudioBuffer,
+    AudioProcess,
+    AmbiguousAudioProcessError,
+    find_process_by_name,
+    list_audio_processes,
+    record_process,
+    record_system_audio,
+)
 
-k = PyKeyboard()
-
-# import autopy
-
-# 改成True为测试
-dev = False
-a = sd.query_devices()
-# print(a)
-#
-sd.default.device[0] = 1 # 改成这个之后就直接监听内置声音
-print('-----')
-# print(a)
-
-def check_screen_size():
-    print("Checking screen size")
-    img = ImageGrab.grab()
-    # img.save('temp.png')
-    print('img.size')
-    print(img.size)
-
-    global screen_size
-    global screen_start_point
-    global screen_end_point
-    # screen_size = (img.size[0] / 2, img.size[1] / 2)
-    screen_size = (img.size[0], img.size[1])
-
-    print(screen_size)
-    screen_start_point = (screen_size[0] * 0.35, screen_size[1] * 0.35)
-    # print(screen_start_point)
-    screen_end_point = (screen_size[0] * 0.65, screen_size[1] * 0.65)
-    # print(screen_end_point)
-    print("Screen size is " + str(screen_size))
+# 改成 True 为测试
+DEV = False
+TIMEOUT = 120
+START_DELAY = 2
+KEY_TO_PRESS = '0'
+THRESHOLD_DEFAULT = 0.05
+RECENT_PEAK_WINDOW = 12
+TARGET_APP_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', '魔兽世界']
+TARGET_AUDIO_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', 'Battle.net', 'wxplayer', '魔兽世界']
+KEY_CODE_MAP = {
+    '0': 29,
+}
 
 
-def send_float():
-    print('Sending float')
-    k.tap_key('1', 1)
-    print('Float is sent, waiting animation')
-    time.sleep(2)
+def find_target_pid() -> int:
+    apps = NSWorkspace.sharedWorkspace().runningApplications()
+    for app in apps:
+        name = app.localizedName() or ''
+        for hint in TARGET_APP_HINTS:
+            if hint.lower() in name.lower():
+                pid = int(app.processIdentifier())
+                print(f'Using target app: {name} (pid: {pid})')
+                return pid
+
+    running_names = sorted(
+        {
+            (app.localizedName() or '').strip()
+            for app in apps
+            if (app.localizedName() or '').strip()
+        }
+    )
+    raise RuntimeError(
+        'Target app not found.\n'
+        f'Expected one of: {", ".join(TARGET_APP_HINTS)}\n'
+        'Running applications:\n' + '\n'.join(running_names)
+    )
 
 
-def make_screenshot():
-    print('进入make_screenshot')
-    size = (int(screen_start_point[0]), int(screen_start_point[1]), int(screen_end_point[0]), int(screen_end_point[1]))
-    print(size)
-    screenshot = ImageGrab.grab(bbox=size)
-    # global x
-    # screenshot_name = 'var/fishing_session' + str(x) + '.png'
-    screenshot_name = 'var/fishing_session' + '.png'
-
-    screenshot.save(screenshot_name)
-    return screenshot_name
-
-
-def move_mouse(place):
-    # print(place)
-    print('进入move_mouse')
-    x, y = place[0], place[1]
-    # print(x, y)
-    # print("Moving cursor to " + str(place))
-    # print(screen_start_point[0],screen_start_point[1])
-    # print(x, y)
-    location_x = int(screen_start_point[0])
-    location_y = int(screen_start_point[1])
-    # print("location_x, location_y")
-    # print(location_x, location_y)
-    lx = location_x + x
-    ly = location_y + y
-    # print('ly, ly')
-    # print(lx, ly)
-    at.mouse.smooth_move(lx, ly)
-
-
-def jump():
-    print('Jump!')
-    # autopy.key.tap(u' ')
-    # k.tap_key('', 1)
-    time.sleep(1)
-
-    # at.mouse.smooth_move(500,500)
-
-
-def find_float(img_name):
-    print('Looking for float')
-    # todo: maybe make some universal float without background?
-
-    # 加载原始的rgb图像
-    img_rgb = cv2.imread(img_name)
-    # 创建一个原始图像的灰度版本，所有操作在灰度版本中处理，然后在RGB图像中使用相同坐标还原
-    img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
-
-    # 加载将要搜索的图像模板
-    template = cv2.imread('var/fishing_float.png', 0)
-
-    height, width = template.shape[:2]
-    size = (int(width * 0.5), int(height * 0.5))
-    template = cv2.resize(template, size, interpolation=cv2.INTER_AREA)
-
-    # 记录图像模板的尺寸
-    w, h = template.shape[::-1]
-
-    res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF)
-    # res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF)
-    #
-    # 'cv2.TM_CCOEFF', 'cv2.TM_CCOEFF_NORMED', 'cv2.TM_CCORR',
-    # 'cv2.TM_CCORR_NORMED', 'cv2.TM_SQDIFF', 'cv2.TM_SQDIFF_NORMED'
-    # cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED 是最小值
-
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-    print(min_val, max_val, min_loc, max_loc)
-
-    print('找到的坐标')
-    print(min_loc)
-    top_left = (max_loc[0]+30, max_loc[1]+30)  # 左上角的位置
-    # top_left = max_loc  # 左上角的位置
-
-    bottom_right = (top_left[0] + w, top_left[1] + h)  # 右下角的位置
-
-    if dev:
-        # 在原图上画矩形，测试代码，测试浮标位置能否找到
-        cv2.rectangle(img_rgb, top_left, btottom_right, (0, 0, 255), 2)
-        # 显示原图和处理后的图像,
-        cv2.imshow("template", template)
-        cv2.imshow("processed", img_rgb)
-        cv2.waitKey()
-
-    # print(min_loc)
-    return top_left
-
-
-def listen():
-    print('Well, now we are listening for loud sounds...')
-    CHUNK = 1024  # CHUNKS of bytes to read each time from mic
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 2
-    RATE = 18000
-    THRESHOLD = 1000  # The threshold intensity that defines silence
-    # and noise signal (an int. lower than THRESHOLD is silence).
-    SILENCE_LIMIT = 1  # Silence limit in seconds. The max ammount of seconds where
-    # only silence is recorded. When this time passes the
-    # recording finishes and the file is delivered.
-    # Open stream
-    p = pyaudio.PyAudio()
-
-
-    stream = p.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=CHUNK)
-    cur_data = ''  # current chunk  of audio data
-    rel = RATE / CHUNK
-    # print(rel)
-    slid_win = deque(maxlen=SILENCE_LIMIT * int(rel))
-
-    success = False
-    listening_start_time = time.time()
-    while True:
+def _find_target_audio_process() -> AudioProcess:
+    for hint in TARGET_AUDIO_HINTS:
         try:
-            cur_data = stream.read(CHUNK)
-            slid_win.append(math.sqrt(abs(audioop.avg(cur_data, 4))))
-            if (sum([x > THRESHOLD for x in slid_win]) > 0):
-                print('I heart something!')
-                success = True
-                break
-            if time.time() - listening_start_time > 20:
-                print('I don\'t hear anything already 20 seconds!')
-                break
-        except IOError:
-            break
+            process = find_process_by_name(hint)
+        except AmbiguousAudioProcessError as exc:
+            print(f'Audio process match is ambiguous for {hint}: {exc}')
+            continue
 
-    # print "* Done recording: " + str(time.time() - start)
-    stream.close()
-    p.terminate()
-    return success
+        if process is not None:
+            print(
+                'Using target audio process: '
+                f'{process.name} (pid: {process.pid}, '
+                f'audio_id: {process.audio_object_id}, '
+                f'bundle: {process.bundle_id or "N/A"})'
+            )
+            return process
 
-
-def snatch():
-    print('Snatching!')
-    at.mouse.click(at.mouse.Button.RIGHT)
-    # time.sleep(0.5)
-    # at.mouse.click(at.mouse.Button.RIGHT)
-
-
-def addBait():
-    print('addBait')
-    k.tap_key('u') # u是设置的打开装备面板
-    time.sleep(2)
-    k.tap_key('3')
-    at.mouse.smooth_move(155, 537)
-    at.mouse.click(at.mouse.Button.LEFT)
-    at.mouse.smooth_move(791, 155)
-    at.mouse.click(at.mouse.Button.LEFT)
-    time.sleep(15)
-    k.tap_key('u')
+    running_processes = list_audio_processes()
+    formatted = [
+        f'{process.name} (PID: {process.pid}, Audio ID: {process.audio_object_id}, '
+        f'Bundle: {process.bundle_id or "N/A"}, outputting={process.is_outputting})'
+        for process in running_processes
+    ]
+    raise RuntimeError(
+        'Target audio process not found.\n'
+        f'Expected one of: {", ".join(TARGET_AUDIO_HINTS)}\n'
+        'Available audio processes:\n' + '\n'.join(formatted)
+    )
 
 
-def autoLogOut():
-    print('自动登出')
-    at.mouse.smooth_move(837, 780)
-    time.sleep(1)
-    at.mouse.click(at.mouse.Button.LEFT)
-    time.sleep(0.5)
-    at.mouse.smooth_move(650, 458)
-    at.mouse.click(at.mouse.Button.LEFT)
-    time.sleep(60)
-
-    # print(k.function_keys[5])
-    # k.tap_key(k.function_keys[5])
-    # k.tap_key(k.numpad_keys['Home'])  # Tap 'Home' on the numpad
-    # print(k)
+def _build_recording_session(on_buffer):
+    try:
+        process = _find_target_audio_process()
+        return record_process(process, on_buffer=on_buffer), f'audio process {process.name}'
+    except Exception as exc:
+        print(f'{exc}\nFalling back to system audio capture.')
+        return record_system_audio(on_buffer=on_buffer), 'system audio'
 
 
-def autoLogin():
-    print('自动登录')
-    at.mouse.smooth_move(1114, 118)
-    at.mouse.click(at.mouse.Button.LEFT)
-    time.sleep(0.1)
-    at.mouse.click(at.mouse.Button.LEFT)
-    time.sleep(25)
+def press_key_to_pid(pid, key=KEY_TO_PRESS):
+    keycode = KEY_CODE_MAP.get(key)
+    if keycode is None:
+        raise ValueError(f'Unsupported key: {key}')
+
+    print(f'Pressing key: {key} -> pid {pid}')
+    source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    key_down = Quartz.CGEventCreateKeyboardEvent(source, keycode, True)
+    key_up = Quartz.CGEventCreateKeyboardEvent(source, keycode, False)
+    Quartz.CGEventPostToPid(int(pid), key_down)
+    Quartz.CGEventPostToPid(int(pid), key_up)
 
 
-def smallLoginLogOut():
-    autoLogOut()
-    autoLogin()
+def _buffer_samples(buffer: AudioBuffer) -> np.ndarray:
+    fmt = buffer.format
+    if fmt.is_float:
+        if fmt.bits_per_sample == 32:
+            dtype = np.float32
+        elif fmt.bits_per_sample == 64:
+            dtype = np.float64
+        else:
+            raise ValueError(f'Unsupported float format: {fmt.bits_per_sample}-bit')
+        return np.frombuffer(buffer.data, dtype=dtype).astype(np.float64, copy=False)
+
+    if not fmt.is_signed_integer:
+        raise ValueError(
+            f'Unsupported sample type: {fmt.sample_type} ({fmt.bits_per_sample}-bit)'
+        )
+
+    if fmt.bits_per_sample == 8:
+        dtype = np.int8
+    elif fmt.bits_per_sample == 16:
+        dtype = np.int16
+    elif fmt.bits_per_sample == 32:
+        dtype = np.int32
+    else:
+        raise ValueError(f'Unsupported integer format: {fmt.bits_per_sample}-bit')
+
+    samples = np.frombuffer(buffer.data, dtype=dtype).astype(np.float64)
+    max_abs = float(1 << (fmt.bits_per_sample - 1))
+    return samples / max_abs
 
 
-t = 0
+def _buffer_volume(buffer: AudioBuffer) -> float:
+    samples = _buffer_samples(buffer)
+    if samples.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(np.square(samples))))
 
 
-def calculate_time():
-    t = round(time.time())
-    return t
+def listen(stop_event, timeout=TIMEOUT, threshold=THRESHOLD_DEFAULT):
+    print(
+        'Well, now we are listening for game internal sounds, '
+        f'timeout: {timeout} seconds, threshold: {threshold}...'
+    )
+    history = deque(maxlen=RECENT_PEAK_WINDOW)
+    triggered = threading.Event()
+    start_time = time.time()
 
-def main():
+    def on_buffer(buffer: AudioBuffer):
+        if stop_event.is_set() or triggered.is_set():
+            return
 
-    if dev:
-        # 调试能否找到图片位置
-        im = 'var/fishing_session.png'
-        place = find_float(im)
+        volume = _buffer_volume(buffer)
+        print(f'[{source_label}] Volume: {volume:.4f}')
+        history.append(volume)
+        recent_peak = max(history)
+        print(f'[{source_label}] Recent peak({len(history)}): {recent_peak:.4f}')
+        if recent_peak > threshold:
+            print('I heard something!')
+            triggered.set()
 
-    time.sleep(3)
-    check_screen_size()
-    x = 0
-    time_list = []
-    # addBait()
-    while True:
-        doc = open('./record.txt','a')
-        t = calculate_time()
-        time_list.append(t)
-        print(time_list)
-        if len(time_list) == 2:
-            print('比较时间')
-            time_difference = time_list[1] - time_list[0]
-            print(str(time_difference), end=' ', file=doc)
-            if 615 <= time_difference:
-                print('add bait,  开始装鱼饵', file=doc)
-                addBait()
-                time_list.pop(0)
-                continue
-            time_list.pop()
-        print(' start fishing')
+    session, source_label = _build_recording_session(on_buffer)
 
-        # print(x)
-        # x += 1
-        # if x % 15 == 0:
-        #     print('开始装')
-        #     addBait()
-        #     for i in range(10):
-        #         k.tap_key('q')
-        #         time.sleep(1)
-        #     k.tap_key('t')
-        # elif x % 200 == 0:
-        #     smallLoginLogOut()
+    try:
+        with session:
+            while (
+                time.time() - start_time < timeout
+                and not triggered.is_set()
+                and not stop_event.is_set()
+            ):
+                time.sleep(0.05)
+    except Exception as exc:
+        print(f'Audio device error: {exc}')
+        return False
 
-        # global x
-        # x += 1
-        k.tap_key('t')
-        for i in range(2):
-            k.tap_key('2')
-        send_float()
-        im = make_screenshot()
-        place = find_float(im)
-        move_mouse(place)
-        if not listen():
-            print('If we didn\' hear anything, lets try again')
-        snatch()
-        doc.close()
-    # listent221()
-    # addBait()
+    if stop_event.is_set():
+        print('Stopped listening.')
+        return None
+
+    if not triggered.is_set():
+        print(f'I do not hear anything already {timeout} seconds!')
+    return triggered.is_set()
 
 
-main()
+class FishingApp:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title('钓鱼')
+        self.root.geometry('260x120')
+        self.root.resizable(False, False)
+
+        self.stop_event = threading.Event()
+        self.worker = None
+        self.status_var = tk.StringVar(value='未启动')
+        self.threshold_var = tk.DoubleVar(value=THRESHOLD_DEFAULT)
+
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=20)
+
+        self.start_button = tk.Button(button_frame, text='启动', width=10, command=self.start)
+        self.start_button.pack(side=tk.LEFT, padx=10)
+
+        self.stop_button = tk.Button(button_frame, text='停止', width=10, command=self.stop, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT, padx=10)
+
+        tk.Label(self.root, textvariable=self.status_var).pack(pady=5)
+        threshold_frame = tk.Frame(self.root)
+        threshold_frame.pack(pady=2)
+        tk.Label(threshold_frame, text='阈值(0~1)').pack(side=tk.LEFT)
+        tk.Entry(threshold_frame, textvariable=self.threshold_var, width=8).pack(side=tk.LEFT, padx=6)
+        self.root.protocol('WM_DELETE_WINDOW', self.close)
+
+    def set_status(self, text):
+        print(text)
+        try:
+            self.root.after(0, lambda: self.status_var.set(text))
+        except tk.TclError:
+            pass
+
+    def set_running_ui(self, running):
+        def update():
+            self.start_button.config(state=tk.DISABLED if running else tk.NORMAL)
+            self.stop_button.config(state=tk.NORMAL if running else tk.DISABLED)
+
+        try:
+            self.root.after(0, update)
+        except tk.TclError:
+            pass
+
+    def sleep_interruptible(self, seconds):
+        end_time = time.time() + seconds
+        while time.time() < end_time:
+            if self.stop_event.is_set():
+                return True
+            time.sleep(min(0.1, end_time - time.time()))
+        return self.stop_event.is_set()
+
+    def start(self):
+        if self.worker and self.worker.is_alive():
+            return
+
+        self.stop_event.clear()
+        self.set_running_ui(True)
+        self.worker = threading.Thread(target=self.run_script, daemon=True)
+        self.worker.start()
+
+    def stop(self):
+        self.set_status('正在停止...')
+        self.stop_event.set()
+
+    def run_script(self):
+        try:
+            target_pid = find_target_pid()
+            self.set_status(f'目标进程 PID: {target_pid}')
+            self.set_status(f'启动后等待 {START_DELAY} 秒...')
+            if self.sleep_interruptible(START_DELAY):
+                return
+
+            press_key_to_pid(target_pid)
+
+            while not self.stop_event.is_set():
+                threshold = float(self.threshold_var.get())
+                self.set_status(f'监听中，最长 {TIMEOUT} 秒，阈值 {threshold:.4f}...')
+                result = listen(self.stop_event, threshold=threshold)
+
+                if result is None or self.stop_event.is_set():
+                    break
+
+                if result:
+                    self.set_status('检测到声音，按 0')
+                    press_key_to_pid(target_pid)
+                    sleep_time = random.uniform(1, 3)
+                    self.set_status(f'等待 {sleep_time:.2f} 秒后再次按 0')
+                    if self.sleep_interruptible(sleep_time):
+                        break
+                    press_key_to_pid(target_pid)
+                else:
+                    self.set_status(f'{TIMEOUT} 秒未检测到声音，重复按 0')
+                    press_key_to_pid(target_pid)
+        except Exception as exc:
+            self.set_status(f'错误：{exc}')
+        finally:
+            self.stop_event.set()
+            self.set_running_ui(False)
+            if self.status_var.get() == '正在停止...':
+                self.set_status('已停止')
+
+    def close(self):
+        self.stop_event.set()
+        self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
+
+
+if __name__ == '__main__':
+    FishingApp().run()

@@ -1,8 +1,323 @@
+# WoW Fishing Helper / 魔兽世界钓鱼辅助脚本
 
-#### License
+> 中文说明在前，English documentation follows below.
 
-fork codingories大佬的代码，拿来用一下，自己写不明白，大佬原内容地址如下。
+## 中文说明
 
+### 项目简介
+
+这是一个 macOS 下使用的魔兽世界钓鱼辅助脚本。当前版本已经去掉截图识别和浮漂定位逻辑，改为通过音频触发：
+
+1. 点击窗口中的「启动」。
+2. 脚本等待 `START_DELAY` 秒，默认 `2` 秒。
+3. 向游戏进程发送一次 `0` 键。
+4. 监听游戏进程音频；如果找不到目标音频进程，则回退为系统音频监听。
+5. 检测到音量峰值超过阈值后，再次向游戏进程发送 `0` 键。
+6. 随机等待 `1~3` 秒后，再发送一次 `0` 键。
+7. 如果 `TIMEOUT` 秒内没有检测到声音，默认 `120` 秒，则重复发送 `0` 键并重新监听。
+8. 点击「停止」可中断监听和循环。
+
+### 主要功能
+
+- Tkinter 图形窗口：包含「启动」「停止」按钮。
+- 可在窗口中配置音量阈值，当前默认值为 `0.05`。
+- 使用 `Quartz.CGEventPostToPid` 直接向目标游戏进程发送按键。
+- 优先使用 `catap` 捕获目标进程音频。
+- 目标音频进程找不到时，自动回退到系统音频捕获。
+- 日志会打印当前音量和最近一段音量峰值，便于调试。
+
+### 当前默认配置
+
+配置位于 `fishing.py` 顶部：
+
+```python
+TIMEOUT = 120
+START_DELAY = 2
+KEY_TO_PRESS = '0'
+THRESHOLD_DEFAULT = 0.05
+RECENT_PEAK_WINDOW = 12
+TARGET_APP_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', '魔兽世界']
+TARGET_AUDIO_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', 'Battle.net', 'wxplayer', '魔兽世界']
 ```
+
+如果你的游戏进程名称不同，可以修改 `TARGET_APP_HINTS` 和 `TARGET_AUDIO_HINTS`。
+
+### 环境要求
+
+- macOS
+- Python 3.14 当前已验证
+- Homebrew
+- macOS 14.2 或更新版本：`catap` 进程音频捕获需要 macOS 14.2+
+- 系统权限：
+  - 辅助功能权限：用于发送按键
+  - 系统音频录制权限：用于捕获应用或系统音频
+
+### 安装
+
+进入项目目录：
+
+```bash
+cd /Users/justin/Desktop/wa/fish/mywowfishing
+```
+
+创建虚拟环境：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+安装依赖：
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install numpy catap pyobjc-framework-ApplicationServices
+```
+
+如果你的 Python 缺少 Tkinter，需要安装：
+
+```bash
+brew install python-tk@3.14
+```
+
+### macOS 权限设置
+
+请到：
+
+```text
+系统设置 -> 隐私与安全性
+```
+
+打开以下权限：
+
+1. **辅助功能**
+   - 允许 Terminal / 终端
+   - 或允许你实际运行脚本的宿主应用
+
+2. **屏幕与系统音频录制 / 系统音频录制**
+   - 允许 Terminal / 终端
+   - 或允许你实际运行脚本的宿主应用
+
+授权后建议重启终端或重新启动脚本。
+
+### 运行
+
+```bash
+cd /Users/justin/Desktop/wa/fish/mywowfishing
+source .venv/bin/activate
+python fishing.py
+```
+
+窗口出现后点击「启动」。
+
+### 使用建议
+
+- 确认游戏已经启动，并且窗口/进程名能被 `TARGET_APP_HINTS` 匹配。
+- 确认游戏正在产生音频。
+- 如果音频进程无法匹配，脚本会自动回退到系统音频捕获。
+- 如果检测太敏感，调高阈值，例如 `0.08`、`0.10`。
+- 如果检测不到声音，调低阈值，例如 `0.03`、`0.02`。
+- 查看终端日志中的：
+  - `Volume`
+  - `Recent peak`
+  - `I heard something!`
+
+### 常见问题
+
+#### 1. `Target audio process not found`
+
+说明 `catap` 没找到匹配的游戏音频进程。当前脚本会自动回退到系统音频捕获。你也可以根据日志中的音频进程列表，修改：
+
+```python
+TARGET_AUDIO_HINTS
+```
+
+#### 2. `output_path must be provided unless on_buffer is set for streaming mode`
+
+说明启动到了旧代码或旧进程。请确认当前文件已保存，并停止旧进程后重新运行：
+
+```bash
+source .venv/bin/activate
+python fishing.py
+```
+
+#### 3. 能发送按键，但游戏没有反应
+
+请检查 macOS「辅助功能」权限是否已给 Terminal / 宿主应用。
+
+#### 4. 没有检测到声音
+
+先看日志中的 `Volume` 和 `Recent peak`：
+
+- 如果一直是 `0.0000`，说明当前捕获源没有收到声音。
+- 如果有数值但不触发，说明阈值过高，可以降低阈值。
+
+### 原始来源
+
+本项目最初 fork 自：
+
+```text
+https://github.com/codingories/mywowfishing
+```
+
+---
+
+## English Documentation
+
+### Overview
+
+This is a macOS helper script for World of Warcraft fishing. The current version no longer uses screenshots, image recognition, or bobber detection. It is now audio-triggered.
+
+Workflow:
+
+1. Click the `Start` button in the GUI.
+2. The script waits `START_DELAY` seconds, currently `2` seconds by default.
+3. It sends the `0` key directly to the game process.
+4. It listens to the game's process audio; if the target audio process cannot be found, it falls back to system audio capture.
+5. When the recent audio peak exceeds the configured threshold, it sends `0` again.
+6. It waits a random `1~3` seconds, then sends `0` once more.
+7. If no sound is detected within `TIMEOUT` seconds, currently `120` seconds, it sends `0` again and restarts listening.
+8. Click `Stop` to interrupt the loop.
+
+### Features
+
+- Tkinter GUI with `Start` and `Stop` buttons.
+- Configurable audio threshold in the GUI. Current default: `0.05`.
+- Sends keyboard events directly to the target game process using `Quartz.CGEventPostToPid`.
+- Uses `catap` to capture target process audio.
+- Falls back to system audio capture if the target audio process is not found.
+- Prints live volume and recent peak values for debugging.
+
+### Default Configuration
+
+Configuration is near the top of `fishing.py`:
+
+```python
+TIMEOUT = 120
+START_DELAY = 2
+KEY_TO_PRESS = '0'
+THRESHOLD_DEFAULT = 0.05
+RECENT_PEAK_WINDOW = 12
+TARGET_APP_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', '魔兽世界']
+TARGET_AUDIO_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', 'Battle.net', 'wxplayer', '魔兽世界']
+```
+
+If your game process name is different, update `TARGET_APP_HINTS` and `TARGET_AUDIO_HINTS`.
+
+### Requirements
+
+- macOS
+- Python 3.14 tested
+- Homebrew
+- macOS 14.2 or later: required by `catap` for process audio capture
+- macOS permissions:
+  - Accessibility: required for sending key events
+  - System audio recording: required for application/system audio capture
+
+### Installation
+
+Go to the project directory:
+
+```bash
+cd /Users/justin/Desktop/wa/fish/mywowfishing
+```
+
+Create and activate a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install numpy catap pyobjc-framework-ApplicationServices
+```
+
+If your Python installation does not include Tkinter, install:
+
+```bash
+brew install python-tk@3.14
+```
+
+### macOS Permissions
+
+Open:
+
+```text
+System Settings -> Privacy & Security
+```
+
+Enable permissions for Terminal or whichever host application runs the script:
+
+1. **Accessibility**
+   - Required for sending key events.
+
+2. **Screen & System Audio Recording / System Audio Recording**
+   - Required for capturing process or system audio.
+
+After granting permissions, restart the terminal or relaunch the script.
+
+### Run
+
+```bash
+cd /Users/justin/Desktop/wa/fish/mywowfishing
+source .venv/bin/activate
+python fishing.py
+```
+
+When the window appears, click `Start`.
+
+### Usage Tips
+
+- Make sure the game is running and its process name matches `TARGET_APP_HINTS`.
+- Make sure the game is producing audio.
+- If the game audio process cannot be matched, the script falls back to system audio capture.
+- If detection is too sensitive, increase the threshold, for example `0.08` or `0.10`.
+- If detection misses sounds, lower the threshold, for example `0.03` or `0.02`.
+- Watch terminal logs for:
+  - `Volume`
+  - `Recent peak`
+  - `I heard something!`
+
+### Troubleshooting
+
+#### 1. `Target audio process not found`
+
+`catap` could not find a matching audio process. The script falls back to system audio capture. You can also update:
+
+```python
+TARGET_AUDIO_HINTS
+```
+
+based on the printed audio process list.
+
+#### 2. `output_path must be provided unless on_buffer is set for streaming mode`
+
+You are likely running old code or an old process. Stop existing processes and restart:
+
+```bash
+source .venv/bin/activate
+python fishing.py
+```
+
+#### 3. Key events are printed but the game does not respond
+
+Check that Accessibility permission is granted to Terminal or the host application.
+
+#### 4. No audio is detected
+
+Check `Volume` and `Recent peak` in the terminal logs:
+
+- If they stay at `0.0000`, the selected capture source is silent.
+- If they have values but do not trigger, lower the threshold.
+
+### Original Source
+
+This project was originally forked from:
+
+```text
 https://github.com/codingories/mywowfishing
 ```

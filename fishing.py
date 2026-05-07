@@ -1,7 +1,7 @@
 # _*_coding:utf-8_*_
 # Author      :ories
 # File_Name   :fishing.py
-# Create_Date :2020-02-26 19:31
+# Create_Date :2026-05-07
 # Description :wow fishing script
 # IDE         :PyCharm
 import random
@@ -28,7 +28,7 @@ DEV = False
 TIMEOUT = 120
 START_DELAY = 2
 KEY_TO_PRESS = '0'
-THRESHOLD_DEFAULT = 0.05
+THRESHOLD_DEFAULT = 0.087
 RECENT_PEAK_WINDOW = 12
 TARGET_APP_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', '魔兽世界']
 TARGET_AUDIO_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', 'Battle.net', 'wxplayer', '魔兽世界']

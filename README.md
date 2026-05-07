@@ -155,9 +155,11 @@ python fishing.py
 - 如果一直是 `0.0000`，说明当前捕获源没有收到声音。
 - 如果有数值但不触发，说明阈值过高，可以降低阈值。
 
-### 原始来源
+### 许可说明
 
-本项目最初 fork 自：
+本项目基于原始项目进行修改，遵循 MIT License。
+
+原始来源：
 
 ```text
 https://github.com/codingories/mywowfishing
@@ -167,9 +169,9 @@ https://github.com/codingories/mywowfishing
 
 ## English Documentation
 
-### Important Notice
+### Disclaimer
 
-**This tool is for personal learning and research only. Please do not use it for any improper purpose.**
+This tool is for personal learning, technical research, and code demonstration only. Do not use it in any actual game scenario or for any other improper purpose. You are solely responsible for any risks, consequences, or liabilities resulting from its use.
 
 ### Project Overview
 
@@ -318,9 +320,11 @@ Check `Volume` and `Recent peak` in the terminal logs:
 - If they stay at `0.0000`, the selected capture source is silent.
 - If they have values but do not trigger, lower the threshold.
 
-### Original Source
+### License Notes
 
-This project was originally forked from:
+This project is modified from the original project and follows the MIT License.
+
+Original source:
 
 ```text
 https://github.com/codingories/mywowfishing

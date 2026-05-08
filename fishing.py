@@ -5,10 +5,12 @@
 # Description :wow fishing script
 # IDE         :PyCharm
 import random
+import sys
 import threading
 import time
 import tkinter as tk
 from collections import deque
+from tkinter.scrolledtext import ScrolledText
 
 import numpy as np
 import Quartz
@@ -30,10 +32,48 @@ START_DELAY = 2
 KEY_TO_PRESS = '0'
 THRESHOLD_DEFAULT = 0.089
 RECENT_PEAK_WINDOW = 12
+ENABLE_SYSTEM_AUDIO_FALLBACK = False
 TARGET_APP_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', '魔兽世界']
 TARGET_AUDIO_HINTS = ['Wow', 'World of Warcraft', 'Warcraft', 'Battle.net', 'wxplayer', '魔兽世界']
 KEY_CODE_MAP = {
+    'a': 0,
+    's': 1,
+    'd': 2,
+    'f': 3,
+    'h': 4,
+    'g': 5,
+    'z': 6,
+    'x': 7,
+    'c': 8,
+    'v': 9,
+    'b': 11,
+    'q': 12,
+    'w': 13,
+    'e': 14,
+    'r': 15,
+    'y': 16,
+    't': 17,
+    '1': 18,
+    '2': 19,
+    '3': 20,
+    '4': 21,
+    '6': 22,
+    '5': 23,
+    '9': 25,
+    '7': 26,
+    '8': 28,
     '0': 29,
+    'o': 31,
+    'u': 32,
+    'i': 34,
+    'p': 35,
+    'l': 37,
+    'j': 38,
+    'k': 40,
+    'n': 45,
+    'm': 46,
+    'space': 49,
+    ' ': 49,
 }
 
 
@@ -96,11 +136,21 @@ def _build_recording_session(on_buffer):
         process = _find_target_audio_process()
         return record_process(process, on_buffer=on_buffer), f'audio process {process.name}'
     except Exception as exc:
+        if not ENABLE_SYSTEM_AUDIO_FALLBACK:
+            raise RuntimeError(f'无法捕获目标音频进程：{exc}') from exc
         print(f'{exc}\nFalling back to system audio capture.')
         return record_system_audio(on_buffer=on_buffer), 'system audio'
 
 
+def normalize_key(key):
+    normalized = key.strip().lower()
+    if normalized in {'space', '空格'}:
+        return 'space'
+    return normalized
+
+
 def press_key_to_pid(pid, key=KEY_TO_PRESS):
+    key = normalize_key(key)
     keycode = KEY_CODE_MAP.get(key)
     if keycode is None:
         raise ValueError(f'Unsupported key: {key}')
@@ -184,7 +234,7 @@ def listen(stop_event, timeout=TIMEOUT, threshold=THRESHOLD_DEFAULT):
                 time.sleep(0.05)
     except Exception as exc:
         print(f'Audio device error: {exc}')
-        return False
+        raise
 
     if stop_event.is_set():
         print('Stopped listening.')
@@ -195,17 +245,36 @@ def listen(stop_event, timeout=TIMEOUT, threshold=THRESHOLD_DEFAULT):
     return triggered.is_set()
 
 
+class TextRedirector:
+    def __init__(self, app, stream, tag='log'):
+        self.app = app
+        self.stream = stream
+        self.tag = tag
+
+    def write(self, text):
+        if self.stream:
+            self.stream.write(text)
+            self.stream.flush()
+        self.app.append_log(text)
+
+    def flush(self):
+        if self.stream:
+            self.stream.flush()
+
+
 class FishingApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title('钓鱼')
-        self.root.geometry('260x120')
-        self.root.resizable(False, False)
+        self.root.geometry('500x300')
+        self.root.minsize(500, 300)
+        self.root.resizable(True, True)
 
         self.stop_event = threading.Event()
         self.worker = None
         self.status_var = tk.StringVar(value='未启动')
         self.threshold_var = tk.DoubleVar(value=THRESHOLD_DEFAULT)
+        self.key_var = tk.StringVar(value=KEY_TO_PRESS)
 
         button_frame = tk.Frame(self.root)
         button_frame.pack(pady=20)
@@ -217,11 +286,43 @@ class FishingApp:
         self.stop_button.pack(side=tk.LEFT, padx=10)
 
         tk.Label(self.root, textvariable=self.status_var).pack(pady=5)
-        threshold_frame = tk.Frame(self.root)
-        threshold_frame.pack(pady=2)
-        tk.Label(threshold_frame, text='阈值(0~1)').pack(side=tk.LEFT)
-        tk.Entry(threshold_frame, textvariable=self.threshold_var, width=8).pack(side=tk.LEFT, padx=6)
+        settings_frame = tk.Frame(self.root)
+        settings_frame.pack(pady=2)
+
+        tk.Label(settings_frame, text='阈值(0~1)').grid(row=0, column=0, padx=4, pady=2, sticky='e')
+        tk.Entry(settings_frame, textvariable=self.threshold_var, width=8).grid(row=0, column=1, padx=4, pady=2)
+
+        tk.Label(settings_frame, text='按键').grid(row=1, column=0, padx=4, pady=2, sticky='e')
+        tk.Entry(settings_frame, textvariable=self.key_var, width=8).grid(row=1, column=1, padx=4, pady=2)
+
+        self.log_text = ScrolledText(self.root, width=56, height=7, wrap=tk.WORD)
+        self.log_text.pack(side=tk.BOTTOM, pady=8)
+        self.log_text.configure(state=tk.DISABLED)
+
+        self.stdout_redirector = TextRedirector(self, sys.stdout)
+        self.stderr_redirector = TextRedirector(self, sys.stderr, tag='error')
+        sys.stdout = self.stdout_redirector
+        sys.stderr = self.stderr_redirector
+
         self.root.protocol('WM_DELETE_WINDOW', self.close)
+
+    def append_log(self, text):
+        if not text:
+            return
+
+        def update():
+            try:
+                self.log_text.configure(state=tk.NORMAL)
+                self.log_text.insert(tk.END, text)
+                self.log_text.see(tk.END)
+                self.log_text.configure(state=tk.DISABLED)
+            except tk.TclError:
+                pass
+
+        try:
+            self.root.after(0, update)
+        except tk.TclError:
+            pass
 
     def set_status(self, text):
         print(text)
@@ -252,6 +353,15 @@ class FishingApp:
         if self.worker and self.worker.is_alive():
             return
 
+        try:
+            key = normalize_key(self.key_var.get())
+            if key not in KEY_CODE_MAP:
+                raise ValueError(f'不支持的按键：{self.key_var.get()}')
+            self.key_var.set(key)
+        except Exception as exc:
+            self.set_status(f'错误：{exc}')
+            return
+
         self.stop_event.clear()
         self.set_running_ui(True)
         self.worker = threading.Thread(target=self.run_script, daemon=True)
@@ -263,13 +373,14 @@ class FishingApp:
 
     def run_script(self):
         try:
+            target_key = normalize_key(self.key_var.get())
             target_pid = find_target_pid()
             self.set_status(f'目标进程 PID: {target_pid}')
             self.set_status(f'启动后等待 {START_DELAY} 秒...')
             if self.sleep_interruptible(START_DELAY):
                 return
 
-            press_key_to_pid(target_pid)
+            press_key_to_pid(target_pid, target_key)
 
             while not self.stop_event.is_set():
                 threshold = float(self.threshold_var.get())
@@ -280,16 +391,16 @@ class FishingApp:
                     break
 
                 if result:
-                    self.set_status('检测到声音，按 0')
-                    press_key_to_pid(target_pid)
+                    self.set_status(f'检测到声音，按 {target_key}')
+                    press_key_to_pid(target_pid, target_key)
                     sleep_time = random.uniform(1, 3)
-                    self.set_status(f'等待 {sleep_time:.2f} 秒后再次按 0')
+                    self.set_status(f'等待 {sleep_time:.2f} 秒后再次按 {target_key}')
                     if self.sleep_interruptible(sleep_time):
                         break
-                    press_key_to_pid(target_pid)
+                    press_key_to_pid(target_pid, target_key)
                 else:
-                    self.set_status(f'{TIMEOUT} 秒未检测到声音，重复按 0')
-                    press_key_to_pid(target_pid)
+                    self.set_status(f'{TIMEOUT} 秒未检测到声音，重复按 {target_key}')
+                    press_key_to_pid(target_pid, target_key)
         except Exception as exc:
             self.set_status(f'错误：{exc}')
         finally:
@@ -300,6 +411,8 @@ class FishingApp:
 
     def close(self):
         self.stop_event.set()
+        sys.stdout = self.stdout_redirector.stream
+        sys.stderr = self.stderr_redirector.stream
         self.root.destroy()
 
     def run(self):

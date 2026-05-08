@@ -1,0 +1,2 @@
+[console_scripts]
+catap = catap.cli:main
